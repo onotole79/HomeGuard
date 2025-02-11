@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Home Guard</string>
+    <string name="connecting">Подключение…</string>
+
+    <string name="connected">Подключено</string>
+    <string name="disconnected">Отключено</string>
+    <string name="subscribe_error">Ошибка подписки</string>
+
+</resources>
