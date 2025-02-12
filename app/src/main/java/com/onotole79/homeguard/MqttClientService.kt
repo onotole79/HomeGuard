@@ -18,6 +18,7 @@ import com.onotole79.homeguard.Constants.ALL_OK
 import com.onotole79.homeguard.Constants.COMMAND
 import com.onotole79.homeguard.Constants.CONNECT
 import com.onotole79.homeguard.Constants.CONNECTING_STATUS
+import com.onotole79.homeguard.Constants.ERROR
 import com.onotole79.homeguard.Constants.PICTURE
 import com.onotole79.homeguard.Constants.LAST_ALERT
 import com.onotole79.homeguard.Constants.TOPIC
@@ -126,8 +127,6 @@ class MqttClientService : Service() {
         else
             value = intent.getStringExtra(VALUE)!!
 
-        MyLog(applicationContext, "$command:$value")
-
         when (command) {
             CONNECT -> {
 
@@ -193,11 +192,13 @@ class MqttClientService : Service() {
             options.password = "".toCharArray()
             options.isAutomaticReconnect = false    // автоматически плохо работает, будем сами
             options.keepAliveInterval = 1000
+            options.maxInflight = 2
 
 
             // устанавливаем callback`и
             mqttClient.setCallback(object : MqttCallback {
                 override fun connectionLost(cause: Throwable?) {
+                    MyLog(applicationContext, "MQTT Отключено Callback"  + cause?.stackTraceToString())
                     Log.i(Constants.TAG, "MQTT Отключено Callback \r\n" + cause?.stackTraceToString())
                     messageToActivity(CONNECTING_STATUS, getString(R.string.disconnected))
                 }
@@ -244,6 +245,7 @@ class MqttClientService : Service() {
                 }
 
                 override fun deliveryComplete(token: IMqttDeliveryToken?) {
+                    MyLog(applicationContext, "MQTT deliveryComplete")
                     Log.i(Constants.TAG, "MQTT deliveryComplete")
                 }
             })
@@ -252,6 +254,8 @@ class MqttClientService : Service() {
             connect(options)
 
         } catch (e: MqttException) {
+            messageToActivity(ERROR, e.stackTraceToString())
+            MyLog(applicationContext, "MQTT init error" + e.stackTraceToString())
             Log.i(Constants.TAG, "MQTT error: " + e.stackTraceToString())
         }
     }
@@ -260,18 +264,22 @@ class MqttClientService : Service() {
     private fun connect(options: MqttConnectOptions) {
         try {
             if (!mqttClient.isConnected) {
+                MyLog(applicationContext, "MQTT Подключение...")
                 Log.i(Constants.TAG, "MQTT Подключение...")
                 messageToActivity(CONNECTING_STATUS, getString(R.string.connecting))
                 mqttClient.connect(options)
                 Log.i(Constants.TAG, "MQTT Подключено")
                 messageToActivity(CONNECTING_STATUS, getString(R.string.connected))
+                messageToActivity(ERROR, "")
                 mqttClient.subscribe("$TOPIC/#", 1)
                 Log.i(Constants.TAG, "MQTT Subscribe: $TOPIC/#")
                 publish(TOPIC, LAST_ALERT)
 
             }
         } catch (e: MqttException) {
+            messageToActivity(ERROR, e.stackTraceToString())
             Log.e(Constants.TAG, "MQTT connect error: " + e.stackTraceToString())
+            MyLog(applicationContext, "MQTT connect error" + e.stackTraceToString())
         }
     }
 
@@ -283,8 +291,11 @@ class MqttClientService : Service() {
             mqttMessage.qos = 2
             mqttTopic.publish(mqttMessage)
             Log.i(Constants.TAG, "MQTT publish: $message")
+            MyLog(applicationContext, "MQTT publish: $message")
         } catch (e: MqttException) {
+            messageToActivity(ERROR, e.stackTraceToString())
             Log.e(Constants.TAG, "MQTT publish error: " + e.stackTraceToString())
+            MyLog(applicationContext, "MQTT publish error: " + e.stackTraceToString())
             disconnect()
         }
     }
@@ -321,7 +332,6 @@ class MqttClientService : Service() {
     }
 
 
-
     // в таймере проверяем соединение с брокером, если долго не подключались, пытаемся снова
     private fun setTimer() {
         Log.i(Constants.TAG, "Start timer")
@@ -330,12 +340,6 @@ class MqttClientService : Service() {
         var notConnectCount = 0
         timer.schedule(object : TimerTask() {
             override fun run() {
-
-                val icC1 = mqttClient.isConnected //TODO проверка
-                val icC2 = mqttClient.isConnected() //TODO проверка
-                if (mqttClient.isConnected.xor(mqttClient.isConnected()))
-                    messageToActivity(CONNECTING_STATUS, "Разница Значений!!!") //TODO проверка
-
                 if (!mqttClient.isConnected) {
                     Log.i(Constants.TAG, "не подключено: $notConnectCount")
                     notConnectCount++
@@ -344,6 +348,7 @@ class MqttClientService : Service() {
                     try {
                         mqttClient.reconnect()
                     } catch (e: MqttException) {
+                        messageToActivity(ERROR, e.stackTraceToString())
                         Log.e(Constants.TAG, "MQTT error reconnect: " + e.message)
                     }
 //                    connect(options)
@@ -351,12 +356,13 @@ class MqttClientService : Service() {
                     // если было отключение, заново подписываемся и запрашиваем состояние
                     if (notConnectCount>0){
                         messageToActivity(CONNECTING_STATUS, getString(R.string.connected))
+                        messageToActivity(ERROR, "")
                         try {
                             mqttClient.subscribe("$TOPIC/#", 1)
                             Log.i(Constants.TAG, "MQTT Subscribe: $TOPIC/#")
                         } catch (e: MqttException) {
                             Log.e(Constants.TAG, "MQTT error subscribe: " + e.message)
-                            messageToActivity(CONNECTING_STATUS, getString(R.string.subscribe_error))
+                            messageToActivity(ERROR, getString(R.string.subscribe_error))
                         }
                         notConnectCount = 0
                     }

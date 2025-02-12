@@ -38,4 +38,10 @@ class Files{
         File(path).delete()
     }
 
+    fun deleteAll(){
+        for (file in photoDirection.listFiles()!!){
+            file.delete()
+        }
+    }
+
 }

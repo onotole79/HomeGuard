@@ -14,7 +14,7 @@ object Constants {
     const val PUBLISH = "publish"
     const val PUBLISH_ARRAY = "PUBLISH_ARRAY"
     const val PICTURE = "PICTURE"
-
+    const val ERROR = "ERROR"
     const val NOT_CONNECTED = "Не подключено"
     const val CONNECTING_STATUS = "connecting_status"
     const val PING = "PING"

@@ -82,6 +82,7 @@ import com.onotole79.homeguard.Constants.COMMAND
 import com.onotole79.homeguard.Constants.CONNECT
 import com.onotole79.homeguard.Constants.CONNECTING_STATUS
 import com.onotole79.homeguard.Constants.DASH
+import com.onotole79.homeguard.Constants.ERROR
 import com.onotole79.homeguard.Constants.LAST_ALERT
 import com.onotole79.homeguard.Constants.MESSAGE
 import com.onotole79.homeguard.Constants.MQTT_MESSENGER
@@ -119,6 +120,7 @@ class MainActivity : ComponentActivity() {
 
     private var preferences: SharedPreferences? = null
     private var connectStatus = mutableStateOf(NOT_CONNECTED)
+    private var errorStatus = mutableStateOf("")
     private var pingStatus = mutableStateOf(DASH)
     private var isGuardOrClient = mutableStateOf(false)  // guard/client
     private var isGuardRun = mutableStateOf(false)
@@ -129,7 +131,8 @@ class MainActivity : ComponentActivity() {
     private var bitmapTMP = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
     private var photoDescriptionTrigger = 1 // для обновления изображений
     private val photoDescription = mutableStateOf ("1")
-    private var isGallery = true    // показываем все фото или одну выбранную
+
+    private var isGallery = mutableStateOf(true)    // показываем все фото или одну выбранную
     private var photoToShow = bitmapTMP.asImageBitmap()
 
     // guard
@@ -200,11 +203,20 @@ class MainActivity : ComponentActivity() {
                         onClick = {mqttService(CONNECT,"0")},
                         modifier = Modifier
                             .padding(end = 20.dp)
-
                     ) { Text(text = "Reconnect")}
+                }
 
-
-
+                if (errorStatus.value.isNotEmpty()){
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = errorStatus.value,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .padding(start = 5.dp)
+                        )
+                    }
                 }
 
                 Row(
@@ -250,7 +262,7 @@ class MainActivity : ComponentActivity() {
 
                 Button(
                     onClick = {
-                        isGuardOrClient.value = isGuardOrClient.value.xor(true)
+                        isGuardOrClient.value = !isGuardOrClient.value
                     },
                     modifier = Modifier
                         .padding(top = 5.dp)
@@ -364,7 +376,7 @@ class MainActivity : ComponentActivity() {
 
                     Button(
                         onClick = {
-                            isCameraShow.value = isCameraShow.value.xor(true)
+                            isCameraShow.value = !isCameraShow.value
                         },
                         modifier = Modifier
                             .padding(start = 20.dp)
@@ -403,11 +415,17 @@ class MainActivity : ComponentActivity() {
                             mqttService(PUBLISH,PICTURE)
                         },
                     ) {Text("Снимок")}
+
+                    Button(
+                        onClick = {
+                            Files().deleteAll()
+                            recompose()
+                        },
+                    ) {Text("Удалить всё")}
+
                 }
 
-
-
-                if (isGallery){
+                if (isGallery.value){
 
                     Column(
                         modifier = Modifier
@@ -438,7 +456,6 @@ class MainActivity : ComponentActivity() {
                                                 .width(120.dp)
                                                 .height(160.dp)
                                                 .clickable {
-                                                    Log.i(Constants.TAG, "Big image Clicked")
                                                     photoToShow = bitmap
                                                     recompose(false)
                                                 },
@@ -452,7 +469,6 @@ class MainActivity : ComponentActivity() {
                                                 .width(32.dp)
                                                 .height(32.dp)
                                                 .clickable {
-                                                    Log.i(Constants.TAG, "Small image Clicked")
                                                     Files().deletePhoto(photoPath)
                                                     recompose()
                                                 }
@@ -470,13 +486,11 @@ class MainActivity : ComponentActivity() {
                     }
 
                 }else {
-
                     Image(
                         photoToShow,
                         photoDescription.value,
                         modifier = Modifier
                             .clickable {
-                                Log.i(Constants.TAG, "Full image Clicked")
                                 recompose()
                             },
                     )
@@ -576,6 +590,11 @@ class MainActivity : ComponentActivity() {
                         photoToShow = BitmapFactory.decodeByteArray(valueArray, 0, valueArray.size).asImageBitmap()
                         recompose(false)
                     }
+                }
+
+
+                ERROR -> {
+                    errorStatus.value = message
                 }
 
                 "" -> {
@@ -810,7 +829,7 @@ class MainActivity : ComponentActivity() {
 
 private fun recompose(gallery: Boolean = true) {
     // показывать в виде галереи или одиночно
-    isGallery = gallery
+    isGallery.value = gallery
     // Чтобы обновились фото на экране, меняем Description
     photoDescriptionTrigger = photoDescriptionTrigger.xor(1)
     photoDescription.value = photoDescriptionTrigger.toString()
