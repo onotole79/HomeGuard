@@ -2,8 +2,6 @@ package com.onotole79.homeguard
 
 object Constants {
     const val TAG = "MyTag"
-    const val PREFERENCES = "main_preferences"
-    const val NAME = "name"
     const val COMMAND = "command"
     const val VALUE = "value"
     const val MESSAGE = "message"

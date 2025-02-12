@@ -118,7 +118,6 @@ import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
 
-    private var preferences: SharedPreferences? = null
     private var connectStatus = mutableStateOf(NOT_CONNECTED)
     private var errorStatus = mutableStateOf("")
     private var pingStatus = mutableStateOf(DASH)
@@ -630,8 +629,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        STARTED -> isGuardRun.value = true;
-                        STOPPED ->  isGuardRun.value = false;
+                        STARTED -> isGuardRun.value = true
+                        STOPPED ->  isGuardRun.value = false
 
                         else -> if (message.startsWith(PING))
                             pingStatus.value = date + message
@@ -753,7 +752,7 @@ class MainActivity : ComponentActivity() {
                     val paint = Paint()
                     paint.color = resources.getColor(R.color.purple_200)
                     paint.textSize = 50F
-                    paint.isAntiAlias = true;
+                    paint.isAntiAlias = true
                     paint.setXfermode(PorterDuffXfermode(PorterDuff.Mode.SRC_OVER)) // Text Overlapping Pattern
                     // some more settings...
                     canvas.drawText(SimpleDateFormat("dd.MM HH:mm:ss ", Locale.getDefault()).format(Date()),

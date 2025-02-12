@@ -18,12 +18,12 @@ class Files{
         val photo = File(photoDirection, SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault()).format(Date())+".jpeg")
         photoDirection.mkdirs()
         if (photo.exists()) {
-            photo.delete();
+            photo.delete()
         }
         try {
-            val fos = FileOutputStream(photo.path);
-            fos.write(jpeg);
-            fos.close();
+            val fos = FileOutputStream(photo.path)
+            fos.write(jpeg)
+            fos.close()
         }
         catch (e: IOException) {
             Log.e(Constants.TAG, "Photo save error: ", e)
