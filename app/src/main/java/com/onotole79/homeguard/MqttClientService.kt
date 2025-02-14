@@ -8,7 +8,9 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
@@ -51,7 +53,8 @@ class MqttClientService : Service() {
     private lateinit var options: MqttConnectOptions
     private lateinit var timer: Timer
     private var lastAlert = 0L
-    private var isDestroyed = false // только для отладки
+    private var lastTimeDelivery = System.currentTimeMillis()
+    private var lastTimePublish = lastTimeDelivery
 
 
     override fun onBind(intent: Intent): IBinder? { return null }
@@ -219,7 +222,7 @@ class MqttClientService : Service() {
 
                         when (subTopic){
                             "" ->{
-                                Log.i(Constants.TAG, message)
+                                Log.i(Constants.TAG, "Arrived: $message")
                                 when (message){
                                     ALERT ->{
                                         // включаем экран телефона на время
@@ -245,8 +248,8 @@ class MqttClientService : Service() {
                 }
 
                 override fun deliveryComplete(token: IMqttDeliveryToken?) {
-                    MyLog(applicationContext, "MQTT deliveryComplete")
                     Log.i(Constants.TAG, "MQTT deliveryComplete")
+                    lastTimeDelivery = System.currentTimeMillis()
                 }
             })
 
@@ -290,12 +293,10 @@ class MqttClientService : Service() {
             val mqttMessage = MqttMessage(message.toByteArray())
             mqttMessage.qos = 2
             mqttTopic.publish(mqttMessage)
-            Log.i(Constants.TAG, "MQTT publish: $message")
-            MyLog(applicationContext, "MQTT publish: $message")
+            lastTimePublish = System.currentTimeMillis()
         } catch (e: MqttException) {
             messageToActivity(ERROR, e.stackTraceToString())
             Log.e(Constants.TAG, "MQTT publish error: " + e.stackTraceToString())
-            MyLog(applicationContext, "MQTT publish error: " + e.stackTraceToString())
             disconnect()
         }
     }
@@ -324,6 +325,7 @@ class MqttClientService : Service() {
         intent.putExtra(MESSAGE, message)
         sendBroadcast(intent)
     }
+
     private fun messageToActivity(subTopic: String, value: ByteArray) {
         val intent = Intent(MQTT_MESSENGER)
         intent.putExtra(SUBTOPIC, subTopic)
@@ -335,11 +337,19 @@ class MqttClientService : Service() {
     // в таймере проверяем соединение с брокером, если долго не подключались, пытаемся снова
     private fun setTimer() {
         Log.i(Constants.TAG, "Start timer")
-        timer = Timer()
+
         var timerCount = 0  // необходим только для отладки
         var notConnectCount = 0
-        timer.schedule(object : TimerTask() {
+        val handler = Handler(Looper.getMainLooper())
+        val runnable = object : Runnable {
             override fun run() {
+                Log.i(Constants.TAG, "подключено?")
+
+                // Если Delivery не было после Publish, то reconnect
+                if(lastTimeDelivery < lastTimePublish) {
+                    Log.i(Constants.TAG, "No delivery")
+                    disconnect()
+                }
                 if (!mqttClient.isConnected) {
                     Log.i(Constants.TAG, "не подключено: $notConnectCount")
                     notConnectCount++
@@ -351,8 +361,8 @@ class MqttClientService : Service() {
                         messageToActivity(ERROR, e.stackTraceToString())
                         Log.e(Constants.TAG, "MQTT error reconnect: " + e.message)
                     }
-//                    connect(options)
                 } else{
+                    Log.i(Constants.TAG, "подключено")
                     // если было отключение, заново подписываемся и запрашиваем состояние
                     if (notConnectCount>0){
                         messageToActivity(CONNECTING_STATUS, getString(R.string.connected))
@@ -371,8 +381,10 @@ class MqttClientService : Service() {
                     if (timerCount % 6 == 0) publish(TOPIC, LAST_ALERT)
                 }
                 timerCount++
+                handler.postDelayed(this, 10 * 1000)
             }
-        }, 0, 10 * 1000)
+        }
+        handler.post(runnable)
     }
 
 
@@ -381,8 +393,6 @@ class MqttClientService : Service() {
 
         MyLog(applicationContext, "Service onDestroy")
         Log.i(Constants.TAG, "Service onDestroy")
-
-        isDestroyed = true
 
         // останавливаем таймер
         if (::timer.isInitialized)

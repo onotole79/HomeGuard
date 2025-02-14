@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -200,8 +199,6 @@ class MainActivity : ComponentActivity() {
                     )
                     Button(
                         onClick = {mqttService(CONNECT,"0")},
-                        modifier = Modifier
-                            .padding(end = 20.dp)
                     ) { Text(text = "Reconnect")}
                 }
 
@@ -404,9 +401,7 @@ class MainActivity : ComponentActivity() {
                 .clip(RoundedCornerShape(15.dp))
         ){
             Column(
-                modifier = Modifier
-                    .padding(5.dp)
-
+                modifier = Modifier.padding(5.dp)
             ){
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(
@@ -416,12 +411,13 @@ class MainActivity : ComponentActivity() {
                     ) {Text("Снимок")}
 
                     Button(
+                        modifier = Modifier
+                            .padding(start = 10.dp),
                         onClick = {
                             Files().deleteAll()
                             recompose()
                         },
                     ) {Text("Удалить всё")}
-
                 }
 
                 if (isGallery.value){
@@ -447,7 +443,6 @@ class MainActivity : ComponentActivity() {
                                     Box(
                                         modifier = Modifier
                                     ){
-
                                         Image(
                                             bitmap,
                                             photoDescription.value,
@@ -459,7 +454,6 @@ class MainActivity : ComponentActivity() {
                                                     recompose(false)
                                                 },
                                         )
-
                                         Image(
                                             painterResource(R.drawable.ic_delete_32),
                                             "",
