@@ -205,6 +205,7 @@ class MqttClientService : Service() {
                 }
 
                 override fun messageArrived(fullTopic: String?, mqttMessage: MqttMessage?) {
+                    lastTimeDelivery = System.currentTimeMillis()
                     val receivedMessage = mqttMessage?.toString()
                     if (!receivedMessage.isNullOrEmpty()) {
                         val utf8String = receivedMessage.toByteArray(Charset.forName("UTF-8"))

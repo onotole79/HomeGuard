@@ -17,7 +17,6 @@ import android.graphics.PorterDuffXfermode
 import android.hardware.camera2.CameraCharacteristics
 import android.os.Build
 import android.os.Bundle
-import android.os.CountDownTimer
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -110,8 +109,8 @@ import java.util.concurrent.Executors
 
 
 /*
-НА ТЕЛЕФОНЕ ДОЛЖНЫ БЫТЬ ОТКЛЮЧНЫ ЗАСТАВКА И БЛОКИРОВКА ЭКРАНА!!!!
- */
+ДЛЯ РЕЖИМА GUARD НА ТЕЛЕФОНЕ ДОЛЖНЫ БЫТЬ ОТКЛЮЧНЫ ЗАСТАВКА И БЛОКИРОВКА ЭКРАНА!!!!
+*/
 
 
 
@@ -134,9 +133,6 @@ class MainActivity : ComponentActivity() {
     private var photoToShow = bitmapTMP.asImageBitmap()
 
     // guard
-    private var delayStart = mutableStateOf("10")
-    private var counter = mutableStateOf("")
-    private lateinit var countdownTimer:CountDownTimer
     private var isCounting = false
     private var chosenCam = mutableIntStateOf(CameraCharacteristics.LENS_FACING_BACK)
     private var isCameraShow = mutableStateOf(false)
@@ -281,7 +277,6 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun Guard(){
-        val interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }
         if (!prepareCamera()) return
 
         if (!threadCycleTakePicture.isAlive){
@@ -299,48 +294,6 @@ class MainActivity : ComponentActivity() {
                     .padding(5.dp)
                     .fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier
-                        .padding(top = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        modifier = Modifier
-                            .padding(end = 10.dp),
-                        text = "Задержка: "
-
-                    )
-                    with(delayStart) {
-                        MyBasicTextField(
-                            value = value,
-                            labelText = "сек",
-                            interactionSource = interactionSource,
-                            keyboardOptions =  KeyboardOptions(keyboardType = KeyboardType.Number),
-                            onValueChange = {
-                                value = if (it.isEmpty()) "0"    // isEmpty() всегда в начале!!!
-                                else if (it.toInt()>2) it
-                                else "0"
-                            },
-                        )
-                    }
-                    Button(
-                        onClick = {
-                            if (!isGuardRun.value) delayStartTimer()
-                            else mqttService(PUBLISH,STOP)
-                        },
-                        modifier = Modifier
-                            .padding(start = 20.dp)
-                    ) {
-                        Text(
-                            text = listStartStop[if(isCounting.or(isGuardRun.value)) 1 else 0])
-                    }
-
-                    Text(
-                        modifier = Modifier
-                            .padding(start = 10.dp),
-                        text = counter.value
-                    )
-                }
 
                 Row(
                     modifier = Modifier
@@ -353,6 +306,17 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier
                             .padding(start = 5.dp, end = 15.dp)
                     )
+                    Button(
+                        onClick = {
+                            if (!isGuardRun.value) mqttService(PUBLISH,START)
+                            else mqttService(PUBLISH,STOP)
+                        },
+                        modifier = Modifier
+                            .padding(start = 10.dp)
+                    ) {
+                        Text(
+                            text = listStartStop[if(isCounting.or(isGuardRun.value)) 1 else 0])
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -792,28 +756,6 @@ class MainActivity : ComponentActivity() {
                 }
                 Log.i(Constants.TAG, "thread working")
             }
-        }
-    }
-
-
-    private fun delayStartTimer() {
-        if (isCounting) {
-            countdownTimer.cancel()
-            isCounting = false
-            counter.value = ""
-        }
-        else{
-            countdownTimer = object : CountDownTimer(delayStart.value.toLong()*1000, 1000) {
-                override fun onTick(millisUntilFinished: Long) {
-                    isCounting = true
-                    counter.value = (millisUntilFinished/1000).toString()
-                }
-                override fun onFinish() {
-                    isCounting = false
-                    counter.value = ""
-                    mqttService(PUBLISH,START)
-                }
-            }.start()
         }
     }
 
