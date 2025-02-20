@@ -647,13 +647,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun mqttService(value: ByteArray){
-        Thread {
-            startService(
-                Intent(this, MqttClientService::class.java)
-                    .putExtra(COMMAND, PUBLISH_ARRAY)
-                    .putExtra(VALUE, value)
-            )
-        }.start()
+        startService(
+            Intent(this, MqttClientService::class.java)
+                .putExtra(COMMAND, PUBLISH_ARRAY)
+                .putExtra(VALUE, value)
+        )
     }
 
 
@@ -778,7 +776,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val threadCycleTakePicture = Thread{
-        Log.i(Constants.TAG, "thread started")
+        Log.i(Constants.TAG, "thread taking picture started")
         var timeDelay = 100L    // ожидаем инициализацию камеры
         while(true){
             Thread.sleep(timeDelay)

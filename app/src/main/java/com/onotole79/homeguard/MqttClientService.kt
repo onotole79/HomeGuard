@@ -8,9 +8,7 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
@@ -42,19 +40,24 @@ import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.MqttTopic
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
 import java.nio.charset.Charset
-import java.util.Timer
-import java.util.TimerTask
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 
 class MqttClientService : Service() {
 
     private lateinit var notificationManager: NotificationManager
-    private lateinit var mqttClient: MqttClient
-    private lateinit var options: MqttConnectOptions
-    private lateinit var timer: Timer
+
+    private var checkConnection = true
     private var lastAlert = 0L
     private var lastTimeDelivery = System.currentTimeMillis()
     private var lastTimePublish = lastTimeDelivery
+
+    companion object {
+        private var mqttClient: MqttClient? = null
+        private lateinit var options: MqttConnectOptions
+    }
+
 
 
     override fun onBind(intent: Intent): IBinder? { return null }
@@ -83,7 +86,7 @@ class MqttClientService : Service() {
         // запускаем сервис с уведомлением
         ServiceCompat.startForeground(this, NOTIF_ID,
             createNotification (ALL_OK),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE)
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     // создаём уведомление для сервиса
@@ -135,16 +138,20 @@ class MqttClientService : Service() {
 
                 when (value){
                     "1" ->{
-                        if (!::mqttClient.isInitialized){
+                        if (mqttClient == null){
                             // инициализация MQTT, подключение
                             Log.i(Constants.TAG, "Service start CREATING!!!")
-                            initMQTT()
-                            setTimer()
+
+                            Thread{
+                                initMQTT()
+                                startCheckConnection()
+                            }.start()
+                            checkTest()
                         }else{
                             // обновляем статус подключения к MQTT и показываем последнее пришедшее состояние утечки
                             Log.i(Constants.TAG, "Service start CONNECTING_STATUS")
                             var connectStatus = getString(R.string.connected)
-                            if (!mqttClient.isConnected) {
+                            if (!mqttClient!!.isConnected) {
                                 connectStatus = getString(R.string.disconnected)
                             }
                             messageToActivity(CONNECTING_STATUS, connectStatus)
@@ -159,20 +166,11 @@ class MqttClientService : Service() {
             }
 
             PUBLISH -> {
-                publish(TOPIC, value)
+                publish(value)
             }
 
-
             PUBLISH_ARRAY ->{
-                try {
-                    val mqttTopic: MqttTopic = mqttClient.getTopic("$TOPIC/$PICTURE")
-                    val mqttMessage = MqttMessage(valueArray)
-                    mqttTopic.publish(mqttMessage)
-                    Log.i(Constants.TAG, "MQTT publish: byteArray")
-                } catch (e: MqttException) {
-                    Log.e(Constants.TAG, "MQTT publish error: " + e.stackTraceToString())
-                    mqttClient.disconnect()
-                }
+                publish(valueArray)
             }
 
             LAST_ALERT -> {
@@ -199,7 +197,7 @@ class MqttClientService : Service() {
 
 
             // устанавливаем callback`и
-            mqttClient.setCallback(object : MqttCallback {
+            mqttClient!!.setCallback(object : MqttCallback {
                 override fun connectionLost(cause: Throwable?) {
                     MyLog(applicationContext, "MQTT Отключено Callback"  + cause?.stackTraceToString())
                     Log.i(Constants.TAG, "MQTT Отключено Callback \r\n" + cause?.stackTraceToString())
@@ -266,17 +264,18 @@ class MqttClientService : Service() {
 
     private fun connect(options: MqttConnectOptions) {
         try {
-            if (!mqttClient.isConnected) {
+            if (!mqttClient!!.isConnected) {
                 MyLog(applicationContext, "MQTT Подключение...")
                 Log.i(Constants.TAG, "MQTT Подключение...")
                 messageToActivity(CONNECTING_STATUS, getString(R.string.connecting))
-                mqttClient.connect(options)
+                mqttClient!!.connect(options)
                 Log.i(Constants.TAG, "MQTT Подключено")
                 messageToActivity(CONNECTING_STATUS, getString(R.string.connected))
                 messageToActivity(ERROR, "")
-                mqttClient.subscribe("$TOPIC/#", 1)
+                mqttClient!!.subscribe("$TOPIC/#", 1)
+                lastTimeDelivery = System.currentTimeMillis()
                 Log.i(Constants.TAG, "MQTT Subscribe: $TOPIC/#")
-                publish(TOPIC, LAST_ALERT)
+                publish(LAST_ALERT)
 
             }
         } catch (e: MqttException) {
@@ -287,9 +286,9 @@ class MqttClientService : Service() {
     }
 
 
-    private fun publish(topic: String, message: String) {
+    private fun publish(message: String) {
         try {
-            val mqttTopic: MqttTopic = mqttClient.getTopic(topic)
+            val mqttTopic: MqttTopic = mqttClient!!.getTopic(TOPIC)
             val mqttMessage = MqttMessage(message.toByteArray())
             mqttMessage.qos = 2
             mqttTopic.publish(mqttMessage)
@@ -301,20 +300,30 @@ class MqttClientService : Service() {
         }
     }
 
+    private fun publish(valueArray: ByteArray) {
+        try {
+            val mqttTopic: MqttTopic = mqttClient!!.getTopic("$TOPIC/$PICTURE")
+            val mqttMessage = MqttMessage(valueArray)
+            mqttMessage.qos = 2
+            mqttTopic.publish(mqttMessage)
+            lastTimePublish = System.currentTimeMillis()
+        } catch (e: MqttException) {
+            messageToActivity(ERROR, e.stackTraceToString())
+            Log.e(Constants.TAG, "MQTT publish array error: " + e.stackTraceToString())
+            disconnect()
+        }
+    }
+
+
+
+
     private fun disconnect() {
-        if (::mqttClient.isInitialized){
-            try {
-                mqttClient.disconnect()
-                Log.i(Constants.TAG, "MQTT disconnect")
-                messageToActivity(CONNECTING_STATUS, NOT_CONNECTED)
-            } catch (e: MqttException) {
-                Log.e(Constants.TAG, "MQTT error disconnect: " + e.message)
-            }
-        }else{
-            // опытным путём выяснилось: когда вызывается onDestroy при неинициализированных объектах,
-            // означает, служба закрывается системой без перезапуска
-            // перезапускаем службу сами
-            sendBroadcast(Intent(applicationContext, BootBroadcast::class.java))
+        try {
+            Log.i(Constants.TAG, "MQTT disconnect")
+            messageToActivity(CONNECTING_STATUS, NOT_CONNECTED)
+            mqttClient!!.disconnect()
+        } catch (e: MqttException) {
+            Log.e(Constants.TAG, "MQTT error disconnect: " + e.message)
         }
     }
 
@@ -334,57 +343,67 @@ class MqttClientService : Service() {
     }
 
 
-    // в таймере проверяем соединение с брокером, если долго не подключались, пытаемся снова
-    private fun setTimer() {
-        Log.i(Constants.TAG, "Start timer")
 
-        var timerCount = 0  // необходим только для отладки
+    private fun checkTest() {
+        Executors.newScheduledThreadPool(1).scheduleWithFixedDelay({
+            if (checkConnection) {
+                Log.i("Check_Test", "Check Test")
+            }
+        }, 0, 1, TimeUnit.MINUTES)
+    }
+
+    // проверяем соединение с брокером, если долго не подключались, пытаемся снова
+    private fun startCheckConnection() {
+        var checkCount = 0  // необходим только для отладки
         var notConnectCount = 0
-        val handler = Handler(Looper.getMainLooper())
-        val runnable = object : Runnable {
-            override fun run() {
-                Log.i(Constants.TAG, "подключено?")
+        var treadTimeBegin: Long
 
+        while (checkConnection){
+            treadTimeBegin = System.currentTimeMillis()
+            Log.i(Constants.TAG, "подключено?")
+
+            if (!mqttClient!!.isConnected) {
+                Log.i(Constants.TAG, "не подключено: $notConnectCount")
+                notConnectCount++
+                Log.i(Constants.TAG, "CheckConnection: Reconnecting")
+                messageToActivity(CONNECTING_STATUS, getString(R.string.connecting))
+                try {
+                    mqttClient!!.reconnect()
+                } catch (e: MqttException) {
+                    messageToActivity(ERROR, e.stackTraceToString())
+                    Log.e(Constants.TAG, "MQTT error reconnect: " + e.message)
+                }
+            } else{
+                Log.i(Constants.TAG, "подключено")
                 // Если Delivery не было после Publish, то reconnect
-                if(lastTimeDelivery < lastTimePublish) {
+                if((lastTimeDelivery < lastTimePublish) and (lastTimePublish-lastTimeDelivery > 10*1000)) {
                     Log.i(Constants.TAG, "No delivery")
+                    Log.i(Constants.TAG, "$lastTimePublish - $lastTimeDelivery = ${lastTimePublish - lastTimeDelivery}")
                     disconnect()
                 }
-                if (!mqttClient.isConnected) {
-                    Log.i(Constants.TAG, "не подключено: $notConnectCount")
-                    notConnectCount++
-                    Log.i(Constants.TAG, "Timer: Reconnecting")
-                    messageToActivity(CONNECTING_STATUS, getString(R.string.connecting))
+                // если было отключение, заново подписываемся и запрашиваем состояние
+                if (notConnectCount>0){
+                    messageToActivity(CONNECTING_STATUS, getString(R.string.connected))
+                    messageToActivity(ERROR, "")
                     try {
-                        mqttClient.reconnect()
+                        mqttClient!!.subscribe("$TOPIC/#", 1)
+                        Log.i(Constants.TAG, "MQTT Subscribe: $TOPIC/#")
                     } catch (e: MqttException) {
-                        messageToActivity(ERROR, e.stackTraceToString())
-                        Log.e(Constants.TAG, "MQTT error reconnect: " + e.message)
+                        Log.e(Constants.TAG, "MQTT error subscribe: " + e.message)
+                        messageToActivity(ERROR, getString(R.string.subscribe_error))
                     }
-                } else{
-                    Log.i(Constants.TAG, "подключено")
-                    // если было отключение, заново подписываемся и запрашиваем состояние
-                    if (notConnectCount>0){
-                        messageToActivity(CONNECTING_STATUS, getString(R.string.connected))
-                        messageToActivity(ERROR, "")
-                        try {
-                            mqttClient.subscribe("$TOPIC/#", 1)
-                            Log.i(Constants.TAG, "MQTT Subscribe: $TOPIC/#")
-                        } catch (e: MqttException) {
-                            Log.e(Constants.TAG, "MQTT error subscribe: " + e.message)
-                            messageToActivity(ERROR, getString(R.string.subscribe_error))
-                        }
-                        notConnectCount = 0
-                    }
-                    Log.i(Constants.TAG, "Timer: $timerCount")
-                    // каждую минуту посылаем запрос последней тревоги (также используется в качестве PING`a)
-                    if (timerCount % 6 == 0) publish(TOPIC, LAST_ALERT)
+                    notConnectCount = 0
                 }
-                timerCount++
-                handler.postDelayed(this, 10 * 1000)
+                Log.i(Constants.TAG, "startCheckConnection: $checkCount")
+                // каждую минуту посылаем запрос последней тревоги (также используется в качестве PING`a)
+                if (checkCount % 6 == 0) publish(LAST_ALERT)
             }
+            checkCount++
+
+            val timeToSleep = 10*1000 - (System.currentTimeMillis() - treadTimeBegin)
+            if (timeToSleep > 0 ) Thread.sleep(timeToSleep)
         }
-        handler.post(runnable)
+
     }
 
 
@@ -394,9 +413,8 @@ class MqttClientService : Service() {
         MyLog(applicationContext, "Service onDestroy")
         Log.i(Constants.TAG, "Service onDestroy")
 
-        // останавливаем таймер
-        if (::timer.isInitialized)
-            timer.cancel()
+        // останавливаем checkConnection
+        checkConnection = false
         Log.i(Constants.TAG, "Timer: остановлен" )
         // отключаемся от MQTT-брокера
         disconnect()
